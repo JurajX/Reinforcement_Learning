@@ -28,13 +28,16 @@ class REINFORCE(object):
                 _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_actions))*0.0001,
                                        dtype=tf.float32, name='weights')
                 _l1 = tf.matmul(self.state, _W1, name='layer1')
-                self._probs = tf.nn.softmax(_l1, name='action_probabilities')
+
+                _probs = tf.nn.softmax(_l1, name='action_probabilities')
+                _log_probs = tf.log(_probs, name='log_probs')
+                self._action = tf.multinomial(logits=_log_probs, num_samples=1, name='_action')[0,0]
 
             with tf.name_scope('training'):
                 _optimizer = tf.train.GradientDescentOptimizer(1)
                 # GradientDescentOptimizer doesn't have maximize function; max(x) = min(-x)
                 self._train = _optimizer.minimize(
-                    -tf.log(self._probs[0, self.action])*self.dis_pow_t*self.ret*self.lrn_rate )
+                    -_log_probs[0, self.action]*self.dis_pow_t*self.ret*self.lrn_rate )
 
             self._saver = tf.train.Saver()
             self._initializer = tf.global_variables_initializer()
@@ -58,8 +61,8 @@ class REINFORCE(object):
             action - integer in the range [0, n_actions)
         """
         feed_dict = {self.state: state}
-        probs = self._sess.run(self._probs, feed_dict).reshape(-1)
-        return np.argmax(np.random.multinomial(1, probs, 1))
+        action = self._sess.run(self._action, feed_dict)
+        return action
 
     def _discountedRet(self, rewards, discount):
         discounts = [discount**i for i in range(len(rewards))]

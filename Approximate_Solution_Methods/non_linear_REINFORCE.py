@@ -32,19 +32,22 @@ class nl_REINFORCE(object):
                                        dtype=tf.float32, name='weights2')
                 _l2 = tf.matmul(_l1, _W2, name='layer2')
 
-                self._probs = tf.nn.softmax(_l2, name='action_probabilities')
+                _probs = tf.nn.softmax(_l2, name='action_probabilities')
+                _log_probs = tf.log(_probs, name='log_probs')
+                self._action = tf.multinomial(logits=_log_probs, num_samples=1, name='_action')[0,0]
 
             with tf.name_scope('training'):
                 _optimizer = tf.train.GradientDescentOptimizer(1)
                 # GradientDescentOptimizer doesn't have maximize function; max(x) = min(-x)
                 self._train = _optimizer.minimize(
-                    -tf.log(self._probs[0, self.action])*self.dis_pow_t*self.ret*self.lrn_rate )
+                    -_log_probs[0, self.action]*self.dis_pow_t*self.ret*self.lrn_rate )
 
             self._saver = tf.train.Saver()
             self._initializer = tf.global_variables_initializer()
 
             with tf.name_scope('summaries'):
-                tf.summary.histogram(name='histogram_weights', values=_W1)
+                tf.summary.histogram(name='histogram_weights1', values=_W1)
+                tf.summary.histogram(name='histogram_weights2', values=_W2)
                 self._merged_summaries = tf.summary.merge_all()
 
         # Now that the graph is built, create a tf.Session for it, and initialize variables.
@@ -62,8 +65,8 @@ class nl_REINFORCE(object):
             action - integer in the range [0, n_actions)
         """
         feed_dict = {self.state: state}
-        probs = self._sess.run(self._probs, feed_dict).reshape(-1)
-        return np.argmax(np.random.multinomial(1, probs, 1))
+        action = self._sess.run(self._action, feed_dict)
+        return action
 
     def _discountedRet(self, rewards, discount):
         discounts = [discount**i for i in range(len(rewards))]
