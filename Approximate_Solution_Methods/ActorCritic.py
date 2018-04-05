@@ -32,14 +32,20 @@ class Actor(object):
                 _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_actions))*0.0001,
                                        dtype=tf.float32, name='weights')
                 _l1 = tf.matmul(self.state, _W1, name='layer1')
-                self._probs = tf.nn.softmax(_l1, name='action_probabilities')
+
+                _probs = tf.nn.softmax(_l1, name='action_probabilities')
+                _log_probs = tf.log(_probs, name='log_probs')
+                self._action = tf.multinomial(logits=_log_probs, num_samples=1, name='_action')[0,0]
 
             with tf.name_scope('training'):
                 _optimizer = tf.train.GradientDescentOptimizer(1)
-                _grads = _optimizer.compute_gradients(tf.log(self._probs[0, self.action]))
+                _grads = _optimizer.compute_gradients(_log_probs[0, self.action])
                 # Create eligibility traces with the same structure as gradients in grads_and_vars
                 # returned from the compute_gradients member function of GradientDescentOptimizer.
-                _traces = [tf.Variable(tf.zeros(shape=grad[0].shape), dtype=tf.float32, name='trace')
+                _traces = [tf.Variable(initial_value=tf.zeros(shape=grad[0].shape),
+                                       trainable=False,
+                                       dtype=tf.float32,
+                                       name='trace')
                            for grad in _grads]
                 _update_traces = [ _traces[i].assign(
                     self.discount*self.decay*_traces[i] + (self.discount**self._time_step)*_grads[i][0]
@@ -76,8 +82,8 @@ class Actor(object):
             action - integer in the range [0, n_actions)
         """
         feed_dict = {self.state: state}
-        probs = self._sess.run(self._probs, feed_dict).reshape(-1)
-        return np.argmax(np.random.multinomial(1, probs, 1))
+        action = self._sess.run(self._action, feed_dict)
+        return action
 
     def train(self, state, action, discount, decay, td_error, lrn_rate):
         """
@@ -208,7 +214,10 @@ class Critic(object):
                 _grads = _optimizer.compute_gradients(self._value_fct[0, 0])
                 # Create eligibility traces with the same structure as gradients in grads_and_vars
                 # returned from the compute_gradients member function of GradientDescentOptimizer.
-                _traces = [tf.Variable(tf.zeros(shape=grad[0].shape), dtype=tf.float32, name='trace')
+                _traces = [tf.Variable(initial_value=tf.zeros(shape=grad[0].shape),
+                                       trainable=False,
+                                       dtype=tf.float32,
+                                       name='trace')
                            for grad in _grads]
                 _update_traces = [ _traces[i].assign(self.discount*self.decay*_traces[i] + _grads[i][0])
                                    for i in range(len(_grads))]

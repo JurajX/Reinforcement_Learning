@@ -28,22 +28,27 @@ class nl_Actor(object):
             self.lrn_rate = tf.placeholder(shape=None,  dtype=tf.float32, name='learning_rate')
 
             with tf.name_scope('policy'):
-                _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_features))*0.1,
+                _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_features))*0.001,
                                        dtype=tf.float32, name='weights1')
                 _l1 = tf.atan(tf.matmul(self.state, _W1, name='layer1'), name='activation_fct1')
 
-                _W2 = tf.Variable(tf.truncated_normal(shape=(n_features, n_actions))*0.1,
+                _W2 = tf.Variable(tf.truncated_normal(shape=(n_features, n_actions))*0.001,
                                        dtype=tf.float32, name='weights2')
                 _l2 = tf.matmul(_l1, _W2, name='layer2')
 
-                self._probs = tf.nn.softmax(_l2, name='action_probabilities')
+                _probs = tf.nn.softmax(_l2, name='action_probabilities')
+                _log_probs = tf.log(_probs, name='log_probs')
+                self._action = tf.multinomial(logits=_log_probs, num_samples=1, name='_action')[0,0]
 
             with tf.name_scope('training'):
                 _optimizer = tf.train.GradientDescentOptimizer(1)
-                _grads = _optimizer.compute_gradients(tf.log(self._probs[0, self.action]))
+                _grads = _optimizer.compute_gradients(_log_probs[0, self.action])
                 # Create eligibility traces with the same structure as gradients in grads_and_vars
                 # returned from the compute_gradients member function of GradientDescentOptimizer.
-                _traces = [tf.Variable(tf.zeros(shape=grad[0].shape), dtype=tf.float32, name='trace')
+                _traces = [tf.Variable(initial_value=tf.zeros(shape=grad[0].shape),
+                                       trainable=False,
+                                       dtype=tf.float32,
+                                       name='trace')
                            for grad in _grads]
                 _update_traces = [ _traces[i].assign(
                     self.discount*self.decay*_traces[i] + (self.discount**self._time_step)*_grads[i][0]
@@ -62,7 +67,8 @@ class nl_Actor(object):
             self._initializer = tf.global_variables_initializer()
 
             with tf.name_scope('summaries'):
-                tf.summary.histogram(name='histogram_weights', values=_W1)
+                tf.summary.histogram(name='histogram_weights1', values=_W1)
+                tf.summary.histogram(name='histogram_weights2', values=_W2)
                 self._merged_summaries = tf.summary.merge_all()
 
         # Now that the graph is built, create a tf.Session for it, and initialize variables.
@@ -80,8 +86,8 @@ class nl_Actor(object):
             action - integer in the range [0, n_actions)
         """
         feed_dict = {self.state: state}
-        probs = self._sess.run(self._probs, feed_dict).reshape(-1)
-        return np.argmax(np.random.multinomial(1, probs, 1))
+        action = self._sess.run(self._action, feed_dict)
+        return action
 
     def train(self, state, action, discount, decay, td_error, lrn_rate):
         """
@@ -201,11 +207,11 @@ class nl_Critic(object):
             self.lrn_rate = tf.placeholder(shape=None,  dtype=tf.float32, name='learning_rate')
 
             with tf.name_scope('value_function'):
-                _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_features))*0.1,
+                _W1 = tf.Variable(tf.truncated_normal(shape=(n_features, n_features))*0.001,
                                        dtype=tf.float32, name='weights1')
                 _l1 = tf.atan(tf.matmul(self.state, _W1, name='layer1'), name='activation_fct1')
 
-                _W2 = tf.Variable(tf.truncated_normal(shape=(n_features, 1))*0.1,
+                _W2 = tf.Variable(tf.truncated_normal(shape=(n_features, 1))*0.001,
                                        dtype=tf.float32, name='weights2')
                 _l2 = tf.matmul(_l1, _W2, name='layer2')
 
@@ -216,7 +222,10 @@ class nl_Critic(object):
                 _grads = _optimizer.compute_gradients(self._value_fct[0, 0])
                 # Create eligibility traces with the same structure as gradients in grads_and_vars
                 # returned from the compute_gradients member function of GradientDescentOptimizer.
-                _traces = [tf.Variable(tf.zeros(shape=grad[0].shape), dtype=tf.float32, name='trace')
+                _traces = [tf.Variable(initial_value=tf.zeros(shape=grad[0].shape),
+                                       trainable=False,
+                                       dtype=tf.float32,
+                                       name='trace')
                            for grad in _grads]
                 _update_traces = [ _traces[i].assign(self.discount*self.decay*_traces[i] + _grads[i][0])
                                    for i in range(len(_grads))]
@@ -234,7 +243,8 @@ class nl_Critic(object):
             self._initializer = tf.global_variables_initializer()
 
             with tf.name_scope('summaries'):
-                tf.summary.histogram(name='histogram_weights', values=_W1)
+                tf.summary.histogram(name='histogram_weights1', values=_W1)
+                tf.summary.histogram(name='histogram_weights2', values=_W2)
                 self._merged_summaries = tf.summary.merge_all()
 
         # Now that the graph is built, create a tf.Session for it, and initialize variables.
